@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0f2c">
+<title>Đua Xe 3D — Sunset Racer</title>
+<link rel="icon" href="data:,">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    background:#0a0f2c; color:#fff;
+    font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+    -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
+  }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+
+  /* ------- Hiệu ứng khung hình ------- */
+  .vignette {
+    position:fixed; inset:0; pointer-events:none; z-index:5;
+    background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 52%, rgba(0,0,0,.5) 100%);
+  }
+
+  /* ------- HUD ------- */
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  .panel {
+    background:rgba(8,10,26,.55);
+    border:1px solid rgba(255,255,255,.14);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    border-radius:16px; padding:12px 16px;
+    box-shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  .speedbox {
+    position:absolute; left:20px; bottom:20px; min-width:170px;
+  }
+  .speedbox .num {
+    font-family:ui-monospace, "SF Mono", Menlo, monospace;
+    font-size:56px; font-weight:800; line-height:1; letter-spacing:-2px;
+    background:linear-gradient(180deg,#fff,#ffd166);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .speedbox .unit { font-size:12px; letter-spacing:3px; opacity:.65; text-transform:uppercase; }
+  .speedbox .bar { margin-top:10px; height:6px; border-radius:6px; background:rgba(255,255,255,.15); overflow:hidden; }
+  .speedbox .bar i { display:block; height:100%; width:0%; border-radius:6px;
+    background:linear-gradient(90deg,#2ee6a8,#ffd166,#ff5f6d); transition:width .12s linear; }
+
+  .statbox { position:absolute; right:20px; top:20px; text-align:right; min-width:190px; }
+  .statbox .row { display:flex; justify-content:space-between; gap:18px; font-size:14px; padding:3px 0; opacity:.85; }
+  .statbox .row b { font-family:ui-monospace, Menlo, monospace; font-size:16px; color:#ffd166; }
+  .statbox .score { font-size:15px; opacity:1; border-bottom:1px solid rgba(255,255,255,.15); padding-bottom:7px; margin-bottom:6px; }
+  .statbox .score b { font-size:26px; }
+
+  #best {
+    position:absolute; top:20px; left:50%; transform:translateX(-50%);
+    font-size:13px; letter-spacing:2px; text-transform:uppercase; opacity:.7;
+    background:rgba(8,10,26,.5); border:1px solid rgba(255,255,255,.12);
+    padding:6px 14px; border-radius:99px;
+  }
+
+  /* ------- Màn hình overlay ------- */
+  .overlay {
+    position:fixed; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:16px; text-align:center; padding:24px;
+    background:radial-gradient(ellipse at center, rgba(10,12,34,.5), rgba(4,5,16,.9));
+    backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+  }
+  .overlay.hidden, #hud.hidden, #touch.hidden, .newbest.hidden { display:none; }
+  .overlay h1 {
+    font-size:clamp(42px,9vw,92px); font-weight:900; letter-spacing:.05em; line-height:1;
+    background:linear-gradient(92deg,#ffd166 0%,#ff7a3d 45%,#ff5f6d 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 6px 26px rgba(255,110,80,.35));
+  }
+  .overlay h2 { font-size:clamp(24px,4vw,40px); font-weight:800; color:#ff5f6d; letter-spacing:.08em; }
+  .sub { font-size:15px; letter-spacing:6px; text-transform:uppercase; opacity:.7; }
+  .controls {
+    display:flex; flex-wrap:wrap; gap:10px 22px; justify-content:center;
+    font-size:14px; opacity:.85; margin-top:6px;
+  }
+  .controls span kbd {
+    display:inline-block; min-width:26px; padding:3px 8px; margin-right:6px;
+    background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25);
+    border-bottom-width:3px; border-radius:7px; font-family:ui-monospace,Menlo,monospace; font-size:13px;
+  }
+  button.big {
+    pointer-events:auto; cursor:pointer; margin-top:10px;
+    font-size:20px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+    color:#1a0f08; padding:16px 52px; border:none; border-radius:99px;
+    background:linear-gradient(92deg,#ffd166,#ff7a3d);
+    box-shadow:0 10px 34px rgba(255,122,61,.45);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  button.big:hover { transform:translateY(-2px) scale(1.03); box-shadow:0 16px 44px rgba(255,122,61,.6); }
+  button.big:active { transform:scale(.97); }
+  .hint { font-size:13px; opacity:.55; }
+  #rotateHint { display:none; color:#ffd166; opacity:.9; }
+  .touchOnly { display:none; }
+  .results {
+    display:flex; gap:34px; flex-wrap:wrap; justify-content:center;
+    background:rgba(8,10,26,.6); border:1px solid rgba(255,255,255,.14);
+    padding:18px 30px; border-radius:18px; margin-top:4px;
+  }
+  .results div { font-size:13px; letter-spacing:2px; text-transform:uppercase; opacity:.75; }
+  .results div b {
+    display:block; font-size:34px; font-family:ui-monospace,Menlo,monospace;
+    color:#ffd166; opacity:1; letter-spacing:0; margin-top:4px;
+  }
+  .newbest { color:#2ee6a8 !important; font-weight:800; letter-spacing:3px; }
+
+  /* ------- Popup điểm ------- */
+  .popup {
+    position:fixed; z-index:15; pointer-events:none;
+    font-size:26px; font-weight:900; color:#ffd166;
+    text-shadow:0 3px 14px rgba(0,0,0,.7);
+    animation:floatUp .9s ease-out forwards;
+    transform:translate(-50%,-50%);
+  }
+  .popup.near { color:#2ee6a8; font-size:22px; }
+  @keyframes floatUp {
+    0%   { opacity:0; transform:translate(-50%,-30%) scale(.7); }
+    20%  { opacity:1; transform:translate(-50%,-50%) scale(1.1); }
+    100% { opacity:0; transform:translate(-50%,-160%) scale(1); }
+  }
+
+  /* ------- Điều khiển cảm ứng ------- */
+  #touch { position:fixed; inset:auto 0 0 0; z-index:12; display:flex;
+    justify-content:space-between; padding:0 18px calc(20px + env(safe-area-inset-bottom));
+    pointer-events:none; }
+  #touch button {
+    pointer-events:auto; width:88px; height:88px; border-radius:50%;
+    font-size:30px; color:#fff; border:1px solid rgba(255,255,255,.3);
+    background:rgba(8,10,26,.5); backdrop-filter:blur(6px);
+  }
+  #touch button:active { background:rgba(255,122,61,.55); }
+  @media (max-width:640px){
+    .speedbox .num { font-size:42px; }
+    .statbox { min-width:150px; }
+    .controls { font-size:12px; gap:8px 14px; }
+  }
+  /* ------- Tối ưu cho điện thoại / máy tính bảng ------- */
+  @media (pointer: coarse){
+    .touchOnly { display:inline-block; color:#2ee6a8; }
+    .speedbox {
+      left:calc(12px + env(safe-area-inset-left));
+      bottom:calc(132px + env(safe-area-inset-bottom));
+      min-width:132px; padding:8px 12px;
+    }
+    .speedbox .num { font-size:38px; }
+    .speedbox .bar { margin-top:6px; }
+    .statbox {
+      right:calc(12px + env(safe-area-inset-right));
+      top:calc(12px + env(safe-area-inset-top));
+      min-width:146px; padding:9px 13px;
+    }
+    #best { font-size:11px; top:calc(12px + env(safe-area-inset-top)); padding:5px 12px; }
+    #touch button { width:96px; height:96px; font-size:34px; }
+    button.big { font-size:19px; padding:17px 46px; }
+  }
+  @media (pointer: coarse) and (orientation: portrait){
+    #rotateHint { display:block; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+
+<div id="hud" class="hidden">
+  <div class="panel speedbox">
+    <div class="num" id="spd">0</div>
+    <div class="unit">km/h</div>
+    <div class="bar"><i id="spdBar"></i></div>
+  </div>
+  <div class="panel statbox">
+    <div class="row score"><span>ĐIỂM</span><b id="score">0</b></div>
+    <div class="row"><span>Quãng đường</span><b><span id="dist">0</span> m</b></div>
+    <div class="row"><span>Xu</span><b>🪙 <span id="coin">0</span></b></div>
+  </div>
+  <div id="best">Kỷ lục: <span id="bestVal">0</span></div>
+</div>
+
+<div id="menu" class="overlay">
+  <p class="sub">Sunset Racer</p>
+  <h1>ĐUA XE 3D</h1>
+  <div class="controls">
+    <span class="touchOnly">👆 Vuốt ng sang trái/phải để lái · xe tự tăng tốc</span>
+    <span><kbd>←</kbd><kbd>→</kbd> hoặc <kbd>A</kbd><kbd>D</kbd> rẽ</span>
+    <span><kbd>↑</kbd>/<kbd>W</kbd> tăng tốc</span>
+    <span><kbd>↓</kbd>/<kbd>S</kbd> phanh</span>
+    <span><kbd>M</kbd> tắt/bật tiếng</span>
+  </div>
+  <p class="hint" id="rotateHint">📱 Nên xoay ngang máy để nhìn đường tốt hơn</p>
+  <button class="big" id="btnStart">Bắt đầu</button>
+  <p class="hint">Tránh xe khác · nhặt xu · ghi bàn thắng kỷ lục</p>
+</div>
+
+<div id="over" class="overlay hidden">
+  <h2>Tai nạn!</h2>
+  <div class="results">
+    <div>Điểm<b id="finalScore">0</b></div>
+    <div>Quãng đường<b><span id="finalDist">0</span> m</b></div>
+    <div>Xu<b id="finalCoin">0</b></div>
+    <div>Kỷ lục<b id="finalBest">0</b></div>
+  </div>
+  <p id="newBestMsg" class="newbest hidden">★ KỶ LỤC MỚI ★</p>
+  <button class="big" id="btnRetry">Chơi lại</button>
+  <p class="hint">Nhấn <b>R</b> hoặc <b>Enter</b> để chơi lại</p>
+</div>
+
+<div id="touch" class="hidden">
+  <button data-k="left">◀</button>
+  <button data-k="right">▶</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   HẰNG SỐ
+========================================================= */
+const ROAD_HALF   = 6.5;          // nửa bề rộng đường
+const LANES       = [-4.33, 0, 4.33];
+const ROAD_LEN    = 448;          // chiều dài đoạn đường (chữ nhật)
+const BLOCK       = 16;           // 1 khối texture = 16 m đường
+const SPAWN_Z     = -300;         // nơi sinh chướng ngại (ngoài tầm sương mù)
+const DESPAWN_Z   = 70;
+const MAX_SPEED   = 95;           // đơn vị / giây
+const BASE_SPEED  = 30;
+
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
+
+const STATE = { MENU:'menu', PLAY:'play', OVER:'over' };
+let state = STATE.MENU;
+
+/* =========================================================
+   RENDERER / SCENE / CAMERA
+========================================================= */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+// giới hạn độ phân giải — điện thoại cap thấp hơn để giữ khung hình mượt
+let pixelCap = IS_TOUCH ? 1.25 : 2;
+const applyPixelCap = () => renderer.setPixelRatio(Math.min(devicePixelRatio, pixelCap));
+applyPixelCap();
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+const scene = new THREE.Scene();
+const FOG_COLOR = 0xe8734a;
+scene.fog = new THREE.Fog(FOG_COLOR, 70, 270);
+
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0, 6.4, 13);
+
+/* =========================================================
+   TRỜI (vòm bầu trời chuyển sắc) + MẶT TRỜI
+========================================================= */
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(900, 32, 16),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, fog:false, depthWrite:false,
+    uniforms: {
+      topColor:    { value:new THREE.Color(0x0a1038) },
+      midColor:    { value:new THREE.Color(0x6b3b7a) },
+      bottomColor: { value:new THREE.Color(FOG_COLOR) },
+    },
+    vertexShader: `
+      varying vec3 vPos;
+      void main(){ vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 topColor, midColor, bottomColor;
+      varying vec3 vPos;
+      void main(){
+        float h = clamp(normalize(vPos).y * 1.6 + 0.12, 0.0, 1.0);
+        vec3 col = h < 0.5
+          ? mix(bottomColor, midColor, h/0.5)
+          : mix(midColor, topColor, (h-0.5)/0.5);
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  })
+);
+scene.add(sky);
+
+const sun = new THREE.Mesh(
+  new THREE.CircleGeometry(55, 48),
+  new THREE.MeshBasicMaterial({ color:0xffd08a, fog:false })
+);
+sun.position.set(-140, 60, -700);
+scene.add(sun);
+const sunGlow = new THREE.Mesh(
+  new THREE.CircleGeometry(110, 48),
+  new THREE.MeshBasicMaterial({ color:0xff9a5c, fog:false, transparent:true, opacity:0.35 })
+);
+sunGlow.position.copy(sun.position).z += 5;
+scene.add(sunGlow);
+
+/* =========================================================
+   ÁNH SÁNG
+========================================================= */
+scene.add(new THREE.HemisphereLight(0xa8c0ff, 0x4a3526, 0.8));
+scene.add(new THREE.AmbientLight(0x4a55a0, 0.55));
+
+const sunLight = new THREE.DirectionalLight(0xffd2a1, 1.7);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(IS_TOUCH ? 512 : 1024, IS_TOUCH ? 512 : 1024);
+sunLight.shadow.camera.left = -35; sunLight.shadow.camera.right = 35;
+sunLight.shadow.camera.top  =  45; sunLight.shadow.camera.bottom = -45;
+sunLight.shadow.camera.near = 1;   sunLight.shadow.camera.far = 220;
+sunLight.shadow.bias = -0.0006;
+scene.add(sunLight); scene.add(sunLight.target);
+
+/* =========================================================
+   MẶT ĐƯỜNG + VỈA HÈ
+========================================================= */
+function makeRoadTexture(){
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 512;
+  const x = c.getContext('2d');
+
+  x.fillStyle = '#23242b'; x.fillRect(0,0,256,512);
+  // vân nhựa đường
+  for(let i=0;i<7000;i++){
+    const a = Math.random()*0.09;
+    x.fillStyle = Math.random() > 0.5 ? `rgba(255,255,255,${a*0.5})` : `rgba(0,0,0,${a})`;
+    x.fillRect(Math.random()*256, Math.random()*512, 2, 2);
+  }
+  // vệt bánh xe mòn ở giữa mỗi làn
+  x.fillStyle = 'rgba(0,0,0,0.15)';
+  for(const cx of LANES){
+    const px = (cx + ROAD_HALF) / (ROAD_HALF*2) * 256;
+    x.fillRect(px-26, 0, 52, 512);
+  }
+  // kẻ vạch viền mép đường
+  x.fillStyle = '#e8e6df';
+  x.fillRect(3,0,7,512); x.fillRect(246,0,7,512);
+  // vạch đứt giữa các làn (1 khối 16m: vạch 4.4m - nghỉ 11.6m)
+  const dashXs = [(-2.17+ROAD_HALF)/(ROAD_HALF*2)*256, (2.17+ROAD_HALF)/(ROAD_HALF*2)*256];
+  for(const px of dashXs) x.fillRect(px-4, 60, 8, 140);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, ROAD_LEN / BLOCK);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+const roadTex = makeRoadTexture();
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(1600, 1600),
+  new THREE.MeshStandardMaterial({ color:0x2c3d21, roughness:1 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.02;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const road = new THREE.Mesh(
+  new THREE.PlaneGeometry(ROAD_HALF*2, ROAD_LEN),
+  new THREE.MeshStandardMaterial({ map:roadTex, roughness:0.95 })
+);
+road.rotation.x = -Math.PI/2;
+road.position.set(0, 0.01, 60 - ROAD_LEN/2);
+road.receiveShadow = true;
+scene.add(road);
+
+// vỉa sỏi hai bên
+const shoulderMat = new THREE.MeshStandardMaterial({ color:0x574f45, roughness:1 });
+for(const s of [-1, 1]){
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(3, ROAD_LEN), shoulderMat);
+  sh.rotation.x = -Math.PI/2;
+  sh.position.set(s*(ROAD_HALF+1.5), 0.005, 60 - ROAD_LEN/2);
+  sh.receiveShadow = true;
+  scene.add(sh);
+}
+
+/* =========================================================
+   ĐỒ VẬT VỈA ĐƯỜNG (được tái sử dụng, cuộn về phía người chơi)
+========================================================= */
+const PROPS = [];
+const propSpan = 900;
+
+function addProp(mesh, recycleFn){
+  mesh.userData.recycle = recycleFn;
+  PROPS.push(mesh);
+  scene.add(mesh);
+}
+
+// cột đèn đường
+const poleMat  = new THREE.MeshStandardMaterial({ color:0x2c2f38, roughness:0.7, metalness:0.4 });
+const lampMat  = new THREE.MeshStandardMaterial({ color:0xfff0c0, emissive:0xffd070, emissiveIntensity:2.2 });
+function makeLamp(side, z){
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.18,9,8), poleMat);
+  pole.position.y = 4.5; pole.castShadow = !IS_TOUCH; g.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(2.6,0.14,0.14), poleMat);
+  arm.position.set(-side*1.3, 8.9, 0); g.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.22,0.5), lampMat);
+  head.position.set(-side*2.5, 8.75, 0); g.add(head);
+  g.position.set(side*8.6, 0, z);
+  return g;
+}
+const LAMP_COUNT = IS_TOUCH ? 16 : 22;
+const LAMP_SPAN  = LAMP_COUNT * 40;
+for(let i=0;i<LAMP_COUNT;i++){
+  const side = i % 2 === 0 ? 1 : -1;
+  const z = 60 - i * 40;
+  addProp(makeLamp(side, z), function(){ this.position.z -= LAMP_SPAN; });
+}
+
+// cây thông
+const treeTrunkMat = new THREE.MeshStandardMaterial({ color:0x4a3324, roughness:1 });
+const treeLeafMat  = new THREE.MeshStandardMaterial({ color:0x24512c, roughness:1 });
+function makeTree(){
+  const g = new THREE.Group();
+  const h = 1.2 + Math.random()*1.2;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.26,h,7), treeTrunkMat);
+  trunk.position.y = h/2; g.add(trunk);
+  for(let i=0;i<3;i++){
+    const r = 1.5 - i*0.42;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, 1.9, 8), treeLeafMat);
+    cone.position.y = h + i*1.1 + 0.7;
+    cone.castShadow = !IS_TOUCH;
+    g.add(cone);
+  }
+  return g;
+}
+for(let i=0;i<(IS_TOUCH ? 26 : 46);i++){
+  const t = makeTree();
+  const s = 0.7 + Math.random()*1.1;
+  t.scale.setScalar(s);
+  t.position.set((Math.random()>0.5?1:-1)*(10 + Math.random()*55), 0, 60 - Math.random()*propSpan);
+  addProp(t, function(){
+    this.position.z -= propSpan;
+    this.position.x = (Math.random()>0.5?1:-1)*(10 + Math.random()*55);
+    this.scale.setScalar(0.7 + Math.random()*1.1);
+  });
+}
+
+// bụi cây / đá nhỏ
+const bushMat = new THREE.MeshStandardMaterial({ color:0x39471f, roughness:1 });
+const rockMat = new THREE.MeshStandardMaterial({ color:0x6a6157, roughness:1 });
+for(let i=0;i<(IS_TOUCH ? 20 : 40);i++){
+  const isRock = Math.random() > 0.5;
+  const m = new THREE.Mesh(
+    isRock ? new THREE.DodecahedronGeometry(0.6, 0) : new THREE.SphereGeometry(0.7, 7, 5),
+    isRock ? rockMat : bushMat
+  );
+  const s = 0.6 + Math.random()*1.4;
+  m.scale.setScalar(s);
+  m.position.set((Math.random()>0.5?1:-1)*(8.5 + Math.random()*45), 0.3*s, 60 - Math.random()*propSpan);
+  addProp(m, function(){
+    this.position.z -= propSpan;
+    this.position.x = (Math.random()>0.5?1:-1)*(8.5 + Math.random()*45);
+  });
+}
+
+/* =========================================================
+   XE
+========================================================= */
+const wheelGeo = (()=>{ const g = new THREE.CylinderGeometry(0.45,0.45,0.34,14); g.rotateZ(Math.PI/2); return g; })();
+const wheelMat = new THREE.MeshStandardMaterial({ color:0x14141a, roughness:0.9 });
+const glassMat = new THREE.MeshStandardMaterial({ color:0x0b1620, metalness:0.7, roughness:0.15 });
+const darkMat  = new THREE.MeshStandardMaterial({ color:0x101015, roughness:0.8 });
+const headMat  = new THREE.MeshStandardMaterial({ color:0xfff6d5, emissive:0xfff0b0, emissiveIntensity:2.4 });
+const tailMat  = new THREE.MeshStandardMaterial({ color:0xff3b3b, emissive:0xff1a1a, emissiveIntensity:1.8 });
+
+function makeCar(color, type='sedan'){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color, metalness:0.55, roughness:0.32 });
+  const wheels = [];
+  const isVan = type === 'van';
+
+  const W = isVan ? 2.2 : 2.0;
+  const L = isVan ? 4.9 : 4.4;
+  const bodyH = isVan ? 1.5 : 0.6;
+  const bodyY = isVan ? 1.05 : 0.72;
+
+  const skirt = new THREE.Mesh(new THREE.BoxGeometry(W+0.08, 0.34, L), darkMat);
+  skirt.position.y = 0.36; skirt.castShadow = true; g.add(skirt);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, bodyH, L), bodyMat);
+  body.position.y = bodyY; body.castShadow = true; g.add(body);
+
+  if(isVan){
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(W+0.06, 0.5, L*0.55), glassMat);
+    glass.position.set(0, bodyY+0.35, -0.2); g.add(glass);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(W-0.15, 0.12, L*0.6), bodyMat);
+    roof.position.set(0, bodyY+bodyH/2+0.03, -0.1); roof.castShadow = true; g.add(roof);
+  } else {
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 1.95), glassMat);
+    cabin.position.set(0, 1.2, -0.1); cabin.castShadow = true; g.add(cabin);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 1.5), bodyMat);
+    roof.position.set(0, 1.47, -0.15); roof.castShadow = true; g.add(roof);
+    // cánh lướt gió sau
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.09, 0.5), darkMat);
+    wing.position.set(0, 1.18, 1.95); g.add(wing);
+    for(const s of [-1,1]){
+      const sup = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.16), darkMat);
+      sup.position.set(s*0.7, 1.0, 1.95); g.add(sup);
+    }
+  }
+
+  // đèn pha / đèn hậu
+  for(const s of [-1,1]){
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.16,0.08), headMat);
+    h.position.set(s*0.62, bodyY+0.12, -L/2-0.02); g.add(h);
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.44,0.16,0.08), tailMat);
+    t.position.set(s*0.66, bodyY+0.12, L/2+0.02); g.add(t);
+  }
+
+  // bánh xe
+  const wz = isVan ? 1.65 : 1.4;
+  const wPositions = [[-1.0,-wz],[1.0,-wz],[-1.0,wz],[1.0,wz]];
+  for(const [wx, wzz] of wPositions){
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.position.set(wx, 0.45, wzz);
+    w.castShadow = true;
+    g.add(w); wheels.push(w);
+  }
+
+  g.userData.wheels = wheels;
+  g.userData.halfW = W/2 + 0.05;
+  g.userData.halfL = L/2;
+  g.userData.spin = 0;
+  return g;
+}
+
+// xe người chơi
+const player = makeCar(0x22d3ee, 'sedan');
+player.position.set(0, 0, 0);
+scene.add(player);
+
+// bể chứa xe giao thông
+const CAR_COLORS = [0xff5f6d, 0xffd166, 0x7c5cff, 0x2ee6a8, 0xffffff, 0xff9f43, 0x4dabf7, 0xe84393];
+const obstacles = [];
+for(let i=0;i<14;i++){
+  const type = Math.random() < 0.3 ? 'van' : 'sedan';
+  const car = makeCar(CAR_COLORS[i % CAR_COLORS.length], type);
+  car.visible = false;
+  car.userData.active = false;
+  car.userData.speed = 18;
+  car.userData.passed = false;
+  scene.add(car);
+  obstacles.push(car);
+}
+
+// bể chứa xu
+const coinGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.12, 20);
+coinGeo.rotateX(Math.PI/2);
+const coinMat = new THREE.MeshStandardMaterial({
+  color:0xffc832, metalness:0.9, roughness:0.25,
+  emissive:0x7a5200, emissiveIntensity:0.7
+});
+const coinPool = [];
+for(let i=0;i<18;i++){
+  const m = new THREE.Mesh(coinGeo, coinMat);
+  m.visible = false;
+  m.userData.active = false;
+  m.userData.phase = Math.random()*Math.PI*2;
+  scene.add(m);
+  coinPool.push(m);
+}
+
+/* =========================================================
+   ÂM THANH
+========================================================= */
+let actx = null, master = null, engOsc = null, engOsc2 = null, engGain = null, engFilter = null;
+let muted = false;
+
+function initAudio(){
+  if(actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  actx = new AC();
+  master = actx.createGain(); master.gain.value = muted ? 0 : 0.35; master.connect(actx.destination);
+
+  engFilter = actx.createBiquadFilter();
+  engFilter.type = 'lowpass'; engFilter.frequency.value = 500; engFilter.Q.value = 3;
+  engGain = actx.createGain(); engGain.gain.value = 0;
+  engOsc = actx.createOscillator();  engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
+  engOsc2 = actx.createOscillator(); engOsc2.type = 'square';  engOsc2.frequency.value = 30;
+  engOsc.connect(engFilter); engOsc2.connect(engFilter);
+  engFilter.connect(engGain); engGain.connect(master);
+  engOsc.start(); engOsc2.start();
+}
+function blip(freq, freq2, dur, vol, type='sine'){
+  if(!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(freq2, actx.currentTime + dur);
+  g.gain.setValueAtTime(vol, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+  o.connect(g); g.connect(master);
+  o.start(); o.stop(actx.currentTime + dur + 0.02);
+}
+function crashSound(){
+  if(!actx) return;
+  const len = actx.sampleRate * 0.7;
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.2);
+  const src = actx.createBufferSource(); src.buffer = buf;
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+  const g = actx.createGain(); g.gain.value = 0.8;
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start();
+  blip(220, 40, 0.5, 0.5, 'sawtooth');
+}
+function toggleMute(){
+  muted = !muted;
+  if(master) master.gain.value = muted ? 0 : 0.35;
+}
+
+/* =========================================================
+   TRẠNG TRÒ CHƠI
+========================================================= */
+let speed = BASE_SPEED;
+let traveled = 0, coinCount = 0, score = 0, scoreBonus = 0;
+let best = Number(localStorage.getItem('sunsetracer.best') || 0);
+let steerVel = 0;
+let nextObstacleAt = 90, nextCoinAt = 45;
+let crashT = 0;
+let fovNow = 62;
+
+const keys = {};
+
+/* ---- HUD ---- */
+const el = id => document.getElementById(id);
+const hud = { spd:el('spd'), bar:el('spdBar'), score:el('score'), dist:el('dist'),
+              coin:el('coin'), best:el('bestVal') };
+hud.best.textContent = best;
+
+function popup(text, cls=''){
+  const s = document.createElement('span');
+  s.className = 'popup ' + cls;
+  s.textContent = text;
+  s.style.left = (innerWidth/2 + (Math.random()*120-60)) + 'px';
+  s.style.top  = (innerHeight*0.42) + 'px';
+  document.body.appendChild(s);
+  setTimeout(()=>s.remove(), 950);
+}
+
+function updateHUD(){
+  hud.spd.textContent  = Math.round(speed * 3.6);
+  hud.bar.style.width  = Math.min(100, speed / MAX_SPEED * 100) + '%';
+  hud.score.textContent = score;
+  hud.dist.textContent = Math.floor(traveled);
+  hud.coin.textContent = coinCount;
+}
+
+/* ---- Bắt đầu / kết thúc ---- */
+function startGame(){
+  initAudio();
+  if(actx && actx.state === 'suspended') actx.resume();
+
+  for(const o of obstacles){ o.userData.active = false; o.visible = false; }
+  for(const c of coinPool){ c.userData.active = false; c.visible = false; }
+
+  player.position.set(0,0,0);
+  player.rotation.set(0,0,0);
+  speed = BASE_SPEED; traveled = 0; coinCount = 0; score = 0; scoreBonus = 0;
+  steerVel = 0; crashT = 0; fovNow = 62;
+  nextObstacleAt = 90; nextCoinAt = 45;
+  camera.fov = 62; camera.updateProjectionMatrix();
+
+  state = STATE.PLAY;
+  el('menu').classList.add('hidden');
+  el('over').classList.add('hidden');
+  el('newBestMsg').classList.add('hidden');
+  el('hud').classList.remove('hidden');
+  if(IS_TOUCH) el('touch').classList.remove('hidden');
+  updateHUD();
+}
+
+function gameOver(){
+  state = STATE.OVER;
+  crashT = 0;
+  crashSound();
+  if(engGain) engGain.gain.value = 0;
+  if(IS_TOUCH) el('touch').classList.add('hidden');
+
+  const isRecord = score > best;
+  if(isRecord){ best = score; localStorage.setItem('sunsetracer.best', best); }
+
+  setTimeout(()=>{
+    el('finalScore').textContent = score;
+    el('finalDist').textContent  = Math.floor(traveled);
+    el('finalCoin').textContent  = coinCount;
+    el('finalBest').textContent  = best;
+    hud.best.textContent = best;
+    if(isRecord) el('newBestMsg').classList.remove('hidden');
+    el('over').classList.remove('hidden');
+  }, 950);
+}
+
+el('btnStart').addEventListener('click', startGame);
+el('btnRetry').addEventListener('click', startGame);
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if(['arrowleft','arrowright','arrowup','arrowdown',' '].includes(k)) e.preventDefault();
+  if(!keys[k]){
+    if(k === 'm') toggleMute();
+    if(state === STATE.MENU && (k === 'enter' || k === ' ')) startGame();
+    else if(state === STATE.OVER && (k === 'r' || k === 'enter' || k === ' ')) startGame();
+  }
+  keys[k] = true;
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// điều khiển cảm ứng: nút bấm + vuốt lái trên màn hình
+const touchState = { left:false, right:false };
+let steerAnalog = 0;      // giá trị lái từ thao tác vuốt (-1 .. 1)
+let dragId = null, dragStartX = 0;
+
+document.querySelectorAll('#touch button').forEach(b => {
+  const dir = b.dataset.k;
+  const on  = e => { e.preventDefault(); e.stopPropagation(); touchState[dir] = true; };
+  const off = e => { e.preventDefault(); touchState[dir] = false; };
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('pointercancel', off);
+});
+
+// vuốt ngón sang trái/phải để rẽ (chạm anywhere trên màn hình)
+addEventListener('pointerdown', e => {
+  if(state !== STATE.PLAY) return;
+  if(e.target.closest && e.target.closest('#touch button')) return;
+  dragId = e.pointerId; dragStartX = e.clientX; steerAnalog = 0;
+});
+addEventListener('pointermove', e => {
+  if(e.pointerId !== dragId) return;
+  steerAnalog = Math.max(-1, Math.min(1, (e.clientX - dragStartX) / 90));
+});
+const endDrag = e => {
+  if(e.pointerId !== dragId) return;
+  dragId = null; steerAnalog = 0;
+};
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
+
+/* =========================================================
+   SINH CHướng NGẠI + XU
+========================================================= */
+function spawnGroup(){
+  const level = traveled / 1200;
+  const twoCars = Math.random() < Math.min(0.7, 0.3 + level*0.1);
+  const lanes = [0,1,2].sort(()=>Math.random()-0.5).slice(0, twoCars ? 2 : 1);
+  let placed = 0;
+  for(const lane of lanes){
+    const car = obstacles.find(o => !o.userData.active);
+    if(!car) return;
+    car.userData.active = true;
+    car.userData.passed = false;
+    car.userData.speed = 16 + Math.random()*10;
+    car.position.set(LANES[lane], 0, SPAWN_Z - Math.random()*25 - placed*8);
+    car.visible = true;
+    placed++;
+  }
+  nextObstacleAt = traveled + Math.max(50, 95 - level*6) + Math.random()*35;
+}
+
+function spawnCoins(){
+  const lane = LANES[(Math.random()*3)|0];
+  const n = 1 + ((Math.random()*3)|0);
+  for(let i=0;i<n;i++){
+    const c = coinPool.find(c => !c.userData.active);
+    if(!c) break;
+    c.userData.active = true;
+    c.position.set(lane, 1.15, SPAWN_Z - i*7);
+    c.visible = true;
+  }
+  nextCoinAt = traveled + 55 + Math.random()*75;
+}
+
+/* =========================================================
+   CẬP NHẬT
+========================================================= */
+const tmpV = new THREE.Vector3();
+
+function update(dt, t){
+  const playing = state === STATE.PLAY;
+
+  /* --- tốc độ --- */
+  if(playing){
+    const level = traveled / 1200;
+    let target = Math.min(MAX_SPEED, BASE_SPEED + level * 14);
+    if(keys['arrowup'] || keys['w']) target = Math.min(MAX_SPEED + 8, target + 22);
+    if(keys['arrowdown'] || keys['s']) target = target - 45;
+    if(IS_TOUCH) target = Math.min(MAX_SPEED, target + 6);
+
+    // off-road làm chậm
+    const offRoad = Math.abs(player.position.x) > ROAD_HALF - 0.7;
+    if(offRoad) target = Math.min(target, 22);
+
+    speed += (target - speed) * Math.min(1, (target > speed ? 1.4 : 3.5) * dt);
+    speed = Math.max(8, speed);
+    traveled += speed * dt;
+    score = Math.floor(traveled) + coinCount * 25 + scoreBonus;
+  } else if(state === STATE.MENU){
+    speed += (26 - speed) * Math.min(1, 2*dt);
+  } else {
+    speed *= Math.pow(0.06, dt);       // phanh lại sau va chạm
+    if(speed < 0.3) speed = 0;
+    traveled += speed * dt;
+  }
+
+  /* --- lái --- */
+  if(playing){
+    const left  = keys['arrowleft'] || keys['a'] || touchState.left;
+    const right = keys['arrowright']|| keys['d'] || touchState.right;
+    const input = Math.max(-1, Math.min(1, ((right ? 1 : 0) - (left ? 1 : 0)) + steerAnalog));
+    const steerMax = 13.5 - Math.min(4.5, speed * 0.05);
+    steerVel += (input * steerMax - steerVel) * Math.min(1, 11 * dt);
+    player.position.x += steerVel * dt;
+    const lim = ROAD_HALF + 0.6;
+    if(player.position.x >  lim){ player.position.x =  lim; steerVel = 0; }
+    if(player.position.x < -lim){ player.position.x = -lim; steerVel = 0; }
+  } else {
+    steerVel *= Math.pow(0.02, dt);
+  }
+
+  // tư thế xe
+  player.rotation.z = steerVel * 0.02;
+  player.rotation.y = -steerVel * 0.018;
+  if(state === STATE.OVER){
+    crashT += dt;
+    player.rotation.y += dt * 3.2;
+    player.position.y = Math.abs(Math.sin(crashT * 7)) * Math.max(0, 1.1 - crashT) ;
+  } else {
+    player.position.y = 0;
+  }
+
+  // bánh xe quay
+  player.userData.spin += speed * dt / 0.45;
+  for(const w of player.userData.wheels) w.rotation.x = player.userData.spin;
+
+  /* --- cuộn thế giới --- */
+  roadTex.offset.y += (speed * dt) / BLOCK;
+
+  for(const p of PROPS){
+    p.position.z += speed * dt;
+    if(p.position.z > 60) p.userData.recycle.call(p);
+  }
+
+  /* --- chướng ngại --- */
+  if(playing && traveled > nextObstacleAt) spawnGroup();
+  for(const o of obstacles){
+    if(!o.userData.active) continue;
+    o.position.z += (speed - o.userData.speed) * dt;
+    o.userData.spin += o.userData.speed * dt / 0.45;
+    for(const w of o.userData.wheels) w.rotation.x = o.userData.spin;
+
+    if(o.position.z > DESPAWN_Z){
+      o.userData.active = false; o.visible = false;
+      continue;
+    }
+    // vượt xe
+    if(playing && !o.userData.passed && o.position.z > 0){
+      o.userData.passed = true;
+      const dx = Math.abs(o.position.x - player.position.x);
+      if(dx < 3.6 && speed > 55){
+        scoreBonus += 15;
+        score += 15;
+        popup('SUẤT! +15', 'near');
+        blip(660, 990, 0.12, 0.25, 'triangle');
+      }
+    }
+    // va chạm
+    if(playing){
+      const dz = Math.abs(o.position.z);
+      const dx = Math.abs(o.position.x - player.position.x);
+      if(dz < o.userData.halfL + 2.1 && dx < o.userData.halfW + 1.05){
+        score = Math.floor(traveled) + coinCount * 25 + scoreBonus;
+        gameOver();
+      }
+    }
+  }
+
+  /* --- xu --- */
+  if(playing && traveled > nextCoinAt) spawnCoins();
+  for(const c of coinPool){
+    if(!c.userData.active) continue;
+    c.position.z += speed * dt;
+    c.rotation.y += dt * 3.4;
+    c.position.y = 1.15 + Math.sin(t*3 + c.userData.phase) * 0.16;
+    if(c.position.z > DESPAWN_Z){ c.userData.active = false; c.visible = false; continue; }
+    if(playing && Math.abs(c.position.z) < 2.4 && Math.abs(c.position.x - player.position.x) < 1.7){
+      c.userData.active = false; c.visible = false;
+      coinCount++;
+      score += 25;
+      popup('+25');
+      blip(940, 1480, 0.14, 0.3);
+    }
+  }
+
+  /* --- camera --- */
+  const camX = player.position.x * 0.55;
+  camera.position.x += (camX - camera.position.x) * Math.min(1, 6*dt);
+  const shake = state === STATE.OVER ? Math.max(0, 0.6 - crashT) * 1.4 : (speed > 60 ? (speed-60)*0.004 : 0);
+  camera.position.y = 6.4 + Math.sin(t*2.1)*0.05 + (Math.random()-0.5)*shake;
+  camera.position.z = 13 + (state === STATE.OVER ? Math.min(6, crashT*5) : 0);
+  camera.lookAt(player.position.x * 0.75, 1.6, -10);
+
+  const fovTarget = 62 + Math.max(0, speed - 28) * 0.24;
+  if(Math.abs(fovTarget - fovNow) > 0.05){
+    fovNow += (fovTarget - fovNow) * Math.min(1, 4*dt);
+    camera.fov = fovNow;
+    camera.updateProjectionMatrix();
+  }
+
+  // ánh sáng bám theo người chơi
+  sunLight.position.set(player.position.x - 30, 42, 58);
+  sunLight.target.position.set(player.position.x, 0, -12);
+  sunLight.target.updateMatrixWorld();
+
+  /* --- tiếng động cơ --- */
+  if(actx && engGain){
+    const on = (playing || state === STATE.MENU) && !muted;
+    engGain.gain.value += ((on ? 0.09 : 0) - engGain.gain.value) * Math.min(1, 6*dt);
+    const f = 45 + speed * 1.7;
+    engOsc.frequency.setTargetAtTime(f, actx.currentTime, 0.08);
+    engOsc2.frequency.setTargetAtTime(f * 0.5, actx.currentTime, 0.08);
+    engFilter.frequency.setTargetAtTime(380 + speed * 11, actx.currentTime, 0.1);
+  }
+
+  updateHUD();
+}
+
+/* =========================================================
+   VÒNG LẶP
+========================================================= */
+const clock = new THREE.Clock();
+let fpsTime = 0, fpsCount = 0;
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+  update(dt, t);
+  renderer.render(scene, camera);
+
+  // nếu khung hình bị tụt (máy yếu) thì tự hạ độ phân giải
+  fpsTime += dt; fpsCount++;
+  if(fpsTime >= 2.5){
+    const fps = fpsCount / fpsTime;
+    fpsTime = 0; fpsCount = 0;
+    if(fps < 42 && pixelCap > 1)       { pixelCap = 1;   applyPixelCap(); }
+    else if(fps < 28 && pixelCap > 0.8){ pixelCap = 0.8; applyPixelCap(); }
+  }
+}
+loop();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
